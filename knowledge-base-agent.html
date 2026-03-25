@@ -23,8 +23,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 /* Setup banner */
 .setup-banner { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; }
 .setup-banner label { font-weight: 600; font-size: 0.9rem; display: block; margin-bottom: 0.5rem; }
-.setup-banner input { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.88rem; }
+.setup-banner input, .setup-banner select { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.88rem; }
+.setup-banner select { background: #fff; cursor: pointer; margin-bottom: 0.5rem; }
 .setup-banner small { color: #92400e; font-size: 0.78rem; margin-top: 0.4rem; display: block; }
+.setup-row { display: flex; gap: 0.75rem; align-items: flex-start; }
+.setup-row > div { flex: 1; }
+.setup-row > div:first-child { flex: 0 0 200px; }
 
 /* Dropzone */
 .dropzone { border: 2px dashed #c0c5ce; border-radius: 12px; padding: 2.5rem; text-align: center; cursor: pointer; background: #fff; margin-bottom: 2rem; transition: border-color 0.2s, background 0.2s; }
@@ -82,9 +86,19 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 <!-- ASK PAGE -->
 <div id="page-ask" class="page active">
   <div class="setup-banner">
-    <label>OpenAI API Key</label>
-    <input type="password" id="api-key" placeholder="sk-..." oninput="saveApiKey(this.value)">
-    <small>Stored in browser only. Never sent anywhere except OpenAI.</small>
+    <label>AI Provider & API Key</label>
+    <div class="setup-row">
+      <div>
+        <select id="provider" onchange="saveProvider(this.value)">
+          <option value="openai">OpenAI</option>
+          <option value="gemini">Google Gemini</option>
+        </select>
+      </div>
+      <div>
+        <input type="password" id="api-key" placeholder="sk-..." oninput="saveApiKey(this.value)">
+      </div>
+    </div>
+    <small>Stored in browser only. Key is sent only to the selected provider's API.</small>
   </div>
   <div class="chat-container">
     <div class="chat-messages" id="chat-messages">
@@ -102,8 +116,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
   <h2 class="page-title">Admin — Document Management</h2>
   <div id="admin-alert"></div>
   <div class="setup-banner" style="margin-bottom:1.5rem">
-    <label>OpenAI API Key</label>
-    <input type="password" id="api-key-admin" placeholder="sk-..." oninput="saveApiKey(this.value)">
+    <label>AI Provider & API Key</label>
+    <div class="setup-row">
+      <div>
+        <select id="provider-admin" onchange="saveProvider(this.value)">
+          <option value="openai">OpenAI</option>
+          <option value="gemini">Google Gemini</option>
+        </select>
+      </div>
+      <div>
+        <input type="password" id="api-key-admin" placeholder="sk-..." oninput="saveApiKey(this.value)">
+      </div>
+    </div>
     <small>Required for generating embeddings when uploading documents.</small>
   </div>
   <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
@@ -122,11 +146,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 // ── State ──────────────────────────────────────────────────────────────
 let documents = JSON.parse(localStorage.getItem('kb_documents') || '[]');
 let apiKey = localStorage.getItem('kb_api_key') || '';
+let provider = localStorage.getItem('kb_provider') || 'openai';
 
-// Restore API key inputs
+// Restore inputs
 window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('api-key').value = apiKey;
   document.getElementById('api-key-admin').value = apiKey;
+  document.getElementById('provider').value = provider;
+  document.getElementById('provider-admin').value = provider;
+  updateKeyPlaceholder();
   renderDocList();
 
   // Drag and drop
@@ -147,6 +175,20 @@ function saveApiKey(val) {
   document.getElementById('api-key-admin').value = apiKey;
 }
 
+function saveProvider(val) {
+  provider = val;
+  localStorage.setItem('kb_provider', provider);
+  document.getElementById('provider').value = provider;
+  document.getElementById('provider-admin').value = provider;
+  updateKeyPlaceholder();
+}
+
+function updateKeyPlaceholder() {
+  const ph = provider === 'gemini' ? 'AIza...' : 'sk-...';
+  document.getElementById('api-key').placeholder = ph;
+  document.getElementById('api-key-admin').placeholder = ph;
+}
+
 function showPage(page) {
   document.getElementById('page-ask').classList.toggle('active', page === 'ask');
   document.getElementById('page-admin').classList.toggle('active', page === 'admin');
@@ -157,7 +199,7 @@ function showPage(page) {
 // ── Document Processing ────────────────────────────────────────────────
 async function handleFileUpload(file) {
   if (!file) return;
-  if (!apiKey) { showAdminAlert('error', 'Set your OpenAI API key first.'); return; }
+  if (!apiKey) { showAdminAlert('error', 'Set your API key first.'); return; }
 
   const ext = file.name.split('.').pop().toLowerCase();
   if (!['pdf', 'txt', 'md'].includes(ext)) {
@@ -243,8 +285,10 @@ function chunkText(text, size, overlap) {
   return chunks;
 }
 
-// ── OpenAI API ─────────────────────────────────────────────────────────
-async function getEmbeddings(texts) {
+// ── API Layer (provider-aware) ──────────────────────────────────────────
+
+// -- OpenAI --
+async function openaiGetEmbeddings(texts) {
   const all = [];
   const batchSize = 50;
   for (let i = 0; i < texts.length; i += batchSize) {
@@ -261,15 +305,74 @@ async function getEmbeddings(texts) {
   return all;
 }
 
-async function getSingleEmbedding(text) {
-  const res = await fetch('https://api.openai.com/v1/embeddings', {
+async function openaiChat(question, contextText) {
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-    body: JSON.stringify({ model: 'text-embedding-3-small', input: text }),
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: 'You are a knowledgeable assistant that answers questions based on the provided documents. Use ONLY the information from the provided context to answer. If the answer cannot be found in the context, say so clearly. Cite the source document names when possible.' },
+        { role: 'user', content: 'Context from knowledge base documents:\n\n' + contextText + '\n\n---\n\nQuestion: ' + question + '\n\nAnswer based on the above context:' }
+      ],
+      temperature: 0.2,
+      max_tokens: 1000,
+    }),
   });
-  if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message || 'Embedding failed'); }
+  if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message || 'Chat failed'); }
   const data = await res.json();
-  return data.data[0].embedding;
+  return data.choices[0].message.content;
+}
+
+// -- Gemini --
+async function geminiGetEmbeddings(texts) {
+  const all = [];
+  const batchSize = 20;
+  for (let i = 0; i < texts.length; i += batchSize) {
+    const batch = texts.slice(i, i + batchSize);
+    const requests = batch.map(t => ({ model: 'models/text-embedding-004', content: { parts: [{ text: t }] } }));
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents?key=' + apiKey, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requests }),
+    });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message || 'Gemini embedding failed'); }
+    const data = await res.json();
+    all.push(...data.embeddings.map(e => e.values));
+  }
+  return all;
+}
+
+async function geminiChat(question, contextText) {
+  const prompt = 'You are a knowledgeable assistant that answers questions based on the provided documents. Use ONLY the information from the provided context to answer. If the answer cannot be found in the context, say so clearly. Cite the source document names when possible.\n\nContext from knowledge base documents:\n\n' + contextText + '\n\n---\n\nQuestion: ' + question + '\n\nAnswer based on the above context:';
+  const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + apiKey, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 1000 },
+    }),
+  });
+  if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message || 'Gemini chat failed'); }
+  const data = await res.json();
+  return data.candidates[0].content.parts[0].text;
+}
+
+// -- Provider router --
+async function getEmbeddings(texts) {
+  if (provider === 'gemini') return geminiGetEmbeddings(texts);
+  return openaiGetEmbeddings(texts);
+}
+
+async function getSingleEmbedding(text) {
+  const results = await getEmbeddings([text]);
+  return results[0];
+}
+
+async function chatWithContext(question, contextChunks) {
+  const contextText = contextChunks.map(c => '[Source: ' + c.filename + ']\n' + c.text).join('\n\n---\n\n');
+  if (provider === 'gemini') return geminiChat(question, contextText);
+  return openaiChat(question, contextText);
 }
 
 function cosineSimilarity(a, b) {
@@ -294,33 +397,13 @@ function searchDocuments(queryEmbedding, topK = 5) {
   return results.slice(0, topK);
 }
 
-async function chatWithContext(question, contextChunks) {
-  const contextText = contextChunks.map(c => '[Source: ' + c.filename + ']\n' + c.text).join('\n\n---\n\n');
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: 'You are a knowledgeable assistant that answers questions based on the provided documents. Use ONLY the information from the provided context to answer. If the answer cannot be found in the context, say so clearly. Cite the source document names when possible.' },
-        { role: 'user', content: 'Context from knowledge base documents:\n\n' + contextText + '\n\n---\n\nQuestion: ' + question + '\n\nAnswer based on the above context:' }
-      ],
-      temperature: 0.2,
-      max_tokens: 1000,
-    }),
-  });
-  if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message || 'Chat failed'); }
-  const data = await res.json();
-  return data.choices[0].message.content;
-}
-
 // ── Chat Handler ───────────────────────────────────────────────────────
 async function handleAsk(e) {
   e.preventDefault();
   const input = document.getElementById('chat-input');
   const question = input.value.trim();
   if (!question) return;
-  if (!apiKey) { addMessage('assistant', 'Please set your OpenAI API key first (at the top of the page).'); return; }
+  if (!apiKey) { addMessage('assistant', 'Please set your API key first (at the top of the page).'); return; }
 
   addMessage('user', question);
   input.value = '';
