@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Knowledge Base Agent</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; color: #1a1a2e; }
+
+/* Navbar */
+.navbar { background: #1a1a2e; color: #fff; padding: 0 2rem; height: 56px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+.navbar h1 { font-size: 1.2rem; font-weight: 600; }
+.navbar nav { display: flex; gap: 0.5rem; }
+.navbar nav button { padding: 0.4rem 1rem; border-radius: 6px; font-size: 0.9rem; font-weight: 500; background: none; border: none; color: #fff; cursor: pointer; transition: background 0.2s; }
+.navbar nav button:hover, .navbar nav button.active { background: rgba(255,255,255,0.15); }
+
+/* Page */
+.page { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; display: none; }
+.page.active { display: block; }
+.page-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 1.5rem; }
+
+/* Setup banner */
+.setup-banner { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; }
+.setup-banner label { font-weight: 600; font-size: 0.9rem; display: block; margin-bottom: 0.5rem; }
+.setup-banner input { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.88rem; }
+.setup-banner small { color: #92400e; font-size: 0.78rem; margin-top: 0.4rem; display: block; }
+
+/* Dropzone */
+.dropzone { border: 2px dashed #c0c5ce; border-radius: 12px; padding: 2.5rem; text-align: center; cursor: pointer; background: #fff; margin-bottom: 2rem; transition: border-color 0.2s, background 0.2s; }
+.dropzone:hover, .dropzone.drag-over { border-color: #4361ee; background: #eef1ff; }
+.dropzone .icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+.dropzone p { color: #6b7280; font-size: 0.95rem; }
+
+/* Doc list */
+.doc-list { display: flex; flex-direction: column; gap: 0.75rem; }
+.doc-card { background: #fff; border-radius: 10px; padding: 1rem 1.25rem; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+.doc-info h3 { font-size: 0.95rem; font-weight: 600; }
+.doc-info p { font-size: 0.8rem; color: #6b7280; margin-top: 2px; }
+.doc-actions { display: flex; align-items: center; gap: 0.75rem; }
+.status-badge { font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 20px; font-weight: 600; text-transform: uppercase; background: #d1fae5; color: #065f46; }
+.btn-delete { background: none; border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.35rem 0.75rem; font-size: 0.8rem; color: #ef4444; cursor: pointer; }
+.btn-delete:hover { background: #fef2f2; }
+.empty-state { text-align: center; padding: 3rem; color: #9ca3af; }
+
+/* Chat */
+.chat-container { display: flex; flex-direction: column; height: calc(100vh - 56px - 4rem); max-height: 700px; }
+.chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem; padding: 1rem 0; }
+.message { max-width: 80%; padding: 0.85rem 1.1rem; border-radius: 12px; font-size: 0.92rem; line-height: 1.55; white-space: pre-wrap; }
+.message.user { align-self: flex-end; background: #4361ee; color: #fff; border-bottom-right-radius: 4px; }
+.message.assistant { align-self: flex-start; background: #fff; color: #1a1a2e; border-bottom-left-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+.message .sources { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid #e5e7eb; font-size: 0.78rem; color: #6b7280; }
+.message .sources span { background: #f3f4f6; padding: 0.15rem 0.5rem; border-radius: 4px; margin-right: 0.4rem; }
+.chat-input-area { display: flex; gap: 0.75rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; }
+.chat-input-area input { flex: 1; padding: 0.75rem 1rem; border: 1px solid #d1d5db; border-radius: 10px; font-size: 0.92rem; outline: none; }
+.chat-input-area input:focus { border-color: #4361ee; }
+.chat-input-area button { padding: 0.75rem 1.5rem; background: #4361ee; color: #fff; border: none; border-radius: 10px; font-size: 0.92rem; font-weight: 600; cursor: pointer; }
+.chat-input-area button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.typing-indicator { display: flex; gap: 4px; padding: 0.85rem 1.1rem; align-self: flex-start; background: #fff; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+.typing-indicator span { width: 8px; height: 8px; background: #9ca3af; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out; }
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce { 0%,80%,100% { transform: scale(0); } 40% { transform: scale(1); } }
+
+.alert { padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.88rem; }
+.alert.error { background: #fee2e2; color: #991b1b; }
+.alert.success { background: #d1fae5; color: #065f46; }
+.processing { color: #92400e; font-size: 0.88rem; margin-top: 0.5rem; }
+</style>
+</head>
+<body>
+
+<header class="navbar">
+  <h1>Knowledge Base Agent</h1>
+  <nav>
+    <button id="nav-ask" class="active" onclick="showPage('ask')">Ask</button>
+    <button id="nav-admin" onclick="showPage('admin')">Admin</button>
+  </nav>
+</header>
+
+<!-- ASK PAGE -->
+<div id="page-ask" class="page active">
+  <div class="setup-banner">
+    <label>OpenAI API Key</label>
+    <input type="password" id="api-key" placeholder="sk-..." oninput="saveApiKey(this.value)">
+    <small>Stored in browser only. Never sent anywhere except OpenAI.</small>
+  </div>
+  <div class="chat-container">
+    <div class="chat-messages" id="chat-messages">
+      <div class="message assistant">Hello! I can answer questions based on the documents in the knowledge base. What would you like to know?</div>
+    </div>
+    <form class="chat-input-area" onsubmit="handleAsk(event)">
+      <input type="text" id="chat-input" placeholder="Ask a question about the knowledge base..." />
+      <button type="submit" id="chat-send">Send</button>
+    </form>
+  </div>
+</div>
+
+<!-- ADMIN PAGE -->
+<div id="page-admin" class="page">
+  <h2 class="page-title">Admin — Document Management</h2>
+  <div id="admin-alert"></div>
+  <div class="setup-banner" style="margin-bottom:1.5rem">
+    <label>OpenAI API Key</label>
+    <input type="password" id="api-key-admin" placeholder="sk-..." oninput="saveApiKey(this.value)">
+    <small>Required for generating embeddings when uploading documents.</small>
+  </div>
+  <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
+    <input type="file" id="file-input" accept=".pdf,.txt,.md,.docx" style="display:none" onchange="handleFileUpload(this.files[0])">
+    <div class="icon">&#128196;</div>
+    <p>Drag & drop a document here, or click to select<br><small>Supported: PDF, TXT, MD</small></p>
+  </div>
+  <div id="processing-status"></div>
+  <h3 style="margin-bottom:1rem;font-weight:600" id="doc-count">Uploaded Documents (0)</h3>
+  <div class="doc-list" id="doc-list">
+    <div class="empty-state">No documents uploaded yet. Upload your first document above.</div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────
+let documents = JSON.parse(localStorage.getItem('kb_documents') || '[]');
+let apiKey = localStorage.getItem('kb_api_key') || '';
+
+// Restore API key inputs
+window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('api-key').value = apiKey;
+  document.getElementById('api-key-admin').value = apiKey;
+  renderDocList();
+
+  // Drag and drop
+  const dz = document.getElementById('dropzone');
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault();
+    dz.classList.remove('drag-over');
+    if (e.dataTransfer.files.length) handleFileUpload(e.dataTransfer.files[0]);
+  });
+});
+
+function saveApiKey(val) {
+  apiKey = val.trim();
+  localStorage.setItem('kb_api_key', apiKey);
+  document.getElementById('api-key').value = apiKey;
+  document.getElementById('api-key-admin').value = apiKey;
+}
+
+function showPage(page) {
+  document.getElementById('page-ask').classList.toggle('active', page === 'ask');
+  document.getElementById('page-admin').classList.toggle('active', page === 'admin');
+  document.getElementById('nav-ask').classList.toggle('active', page === 'ask');
+  document.getElementById('nav-admin').classList.toggle('active', page === 'admin');
+}
+
+// ── Document Processing ────────────────────────────────────────────────
+async function handleFileUpload(file) {
+  if (!file) return;
+  if (!apiKey) { showAdminAlert('error', 'Set your OpenAI API key first.'); return; }
+
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!['pdf', 'txt', 'md'].includes(ext)) {
+    showAdminAlert('error', 'Unsupported file type. Use PDF, TXT, or MD.');
+    return;
+  }
+
+  document.getElementById('processing-status').innerHTML = '<p class="processing">Processing "' + file.name + '"... extracting text and generating embeddings...</p>';
+
+  try {
+    const text = await extractText(file, ext);
+    if (!text.trim()) { showAdminAlert('error', 'No text could be extracted.'); return; }
+
+    const chunks = chunkText(text, 500, 50);
+    const embeddings = await getEmbeddings(chunks);
+
+    const doc = {
+      id: crypto.randomUUID(),
+      name: file.name,
+      date: new Date().toISOString(),
+      chunks: chunks,
+      embeddings: embeddings,
+    };
+
+    documents.push(doc);
+    saveDocuments();
+    renderDocList();
+    showAdminAlert('success', '"' + file.name + '" uploaded — ' + chunks.length + ' chunks indexed.');
+  } catch (err) {
+    showAdminAlert('error', 'Processing failed: ' + err.message);
+  } finally {
+    document.getElementById('processing-status').innerHTML = '';
+    document.getElementById('file-input').value = '';
+  }
+}
+
+async function extractText(file, ext) {
+  if (ext === 'txt' || ext === 'md') {
+    return await file.text();
+  }
+  if (ext === 'pdf') {
+    return await extractPdfText(file);
+  }
+  throw new Error('Unsupported type');
+}
+
+async function extractPdfText(file) {
+  // Load pdf.js from CDN
+  if (!window.pdfjsLib) {
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let text = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    text += content.items.map(item => item.str).join(' ') + '\n';
+  }
+  return text;
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+function chunkText(text, size, overlap) {
+  const words = text.split(/\s+/);
+  const chunks = [];
+  let start = 0;
+  while (start < words.length) {
+    const chunk = words.slice(start, start + size).join(' ');
+    if (chunk.trim()) chunks.push(chunk);
+    start += size - overlap;
+  }
+  return chunks;
+}
+
+// ── OpenAI API ─────────────────────────────────────────────────────────
+async function getEmbeddings(texts) {
+  const all = [];
+  const batchSize = 50;
+  for (let i = 0; i < texts.length; i += batchSize) {
+    const batch = texts.slice(i, i + batchSize);
+    const res = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+      body: JSON.stringify({ model: 'text-embedding-3-small', input: batch }),
+    });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message || 'Embedding failed'); }
+    const data = await res.json();
+    all.push(...data.data.map(d => d.embedding));
+  }
+  return all;
+}
+
+async function getSingleEmbedding(text) {
+  const res = await fetch('https://api.openai.com/v1/embeddings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+    body: JSON.stringify({ model: 'text-embedding-3-small', input: text }),
+  });
+  if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message || 'Embedding failed'); }
+  const data = await res.json();
+  return data.data[0].embedding;
+}
+
+function cosineSimilarity(a, b) {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+function searchDocuments(queryEmbedding, topK = 5) {
+  const results = [];
+  for (const doc of documents) {
+    for (let i = 0; i < doc.chunks.length; i++) {
+      const score = cosineSimilarity(queryEmbedding, doc.embeddings[i]);
+      results.push({ text: doc.chunks[i], filename: doc.name, score });
+    }
+  }
+  results.sort((a, b) => b.score - a.score);
+  return results.slice(0, topK);
+}
+
+async function chatWithContext(question, contextChunks) {
+  const contextText = contextChunks.map(c => '[Source: ' + c.filename + ']\n' + c.text).join('\n\n---\n\n');
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: 'You are a knowledgeable assistant that answers questions based on the provided documents. Use ONLY the information from the provided context to answer. If the answer cannot be found in the context, say so clearly. Cite the source document names when possible.' },
+        { role: 'user', content: 'Context from knowledge base documents:\n\n' + contextText + '\n\n---\n\nQuestion: ' + question + '\n\nAnswer based on the above context:' }
+      ],
+      temperature: 0.2,
+      max_tokens: 1000,
+    }),
+  });
+  if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message || 'Chat failed'); }
+  const data = await res.json();
+  return data.choices[0].message.content;
+}
+
+// ── Chat Handler ───────────────────────────────────────────────────────
+async function handleAsk(e) {
+  e.preventDefault();
+  const input = document.getElementById('chat-input');
+  const question = input.value.trim();
+  if (!question) return;
+  if (!apiKey) { addMessage('assistant', 'Please set your OpenAI API key first (at the top of the page).'); return; }
+
+  addMessage('user', question);
+  input.value = '';
+  document.getElementById('chat-send').disabled = true;
+  showTyping(true);
+
+  try {
+    if (documents.length === 0) {
+      addMessage('assistant', 'No documents have been uploaded to the knowledge base yet. Go to the Admin tab to upload documents first.');
+      return;
+    }
+
+    const queryEmb = await getSingleEmbedding(question);
+    const results = searchDocuments(queryEmb, 5);
+
+    if (results.length === 0) {
+      addMessage('assistant', "I couldn't find any relevant information in the knowledge base.");
+      return;
+    }
+
+    const answer = await chatWithContext(question, results);
+    const sources = [...new Set(results.map(r => r.filename))];
+    addMessage('assistant', answer, sources);
+  } catch (err) {
+    addMessage('assistant', 'Error: ' + err.message);
+  } finally {
+    showTyping(false);
+    document.getElementById('chat-send').disabled = false;
+  }
+}
+
+function addMessage(role, text, sources) {
+  const container = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.className = 'message ' + role;
+  div.textContent = text;
+  if (sources && sources.length) {
+    const srcDiv = document.createElement('div');
+    srcDiv.className = 'sources';
+    srcDiv.innerHTML = 'Sources: ' + sources.map(s => '<span>' + s + '</span>').join('');
+    div.appendChild(srcDiv);
+  }
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function showTyping(show) {
+  const existing = document.getElementById('typing');
+  if (existing) existing.remove();
+  if (show) {
+    const container = document.getElementById('chat-messages');
+    const div = document.createElement('div');
+    div.id = 'typing';
+    div.className = 'typing-indicator';
+    div.innerHTML = '<span></span><span></span><span></span>';
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+// ── Document List ──────────────────────────────────────────────────────
+function renderDocList() {
+  const list = document.getElementById('doc-list');
+  document.getElementById('doc-count').textContent = 'Uploaded Documents (' + documents.length + ')';
+  if (documents.length === 0) {
+    list.innerHTML = '<div class="empty-state">No documents uploaded yet. Upload your first document above.</div>';
+    return;
+  }
+  list.innerHTML = documents.map(doc => `
+    <div class="doc-card">
+      <div class="doc-info">
+        <h3>${doc.name}</h3>
+        <p>${doc.chunks.length} chunks &middot; Uploaded ${new Date(doc.date).toLocaleDateString()}</p>
+      </div>
+      <div class="doc-actions">
+        <span class="status-badge">ready</span>
+        <button class="btn-delete" onclick="deleteDoc('${doc.id}')">Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function deleteDoc(id) {
+  if (!confirm('Delete this document? This cannot be undone.')) return;
+  documents = documents.filter(d => d.id !== id);
+  saveDocuments();
+  renderDocList();
+  showAdminAlert('success', 'Document deleted.');
+}
+
+function saveDocuments() {
+  try {
+    localStorage.setItem('kb_documents', JSON.stringify(documents));
+  } catch (e) {
+    // localStorage might be full for large documents — warn user
+    showAdminAlert('error', 'Storage full. Try deleting some documents or using smaller files.');
+  }
+}
+
+function showAdminAlert(type, text) {
+  const el = document.getElementById('admin-alert');
+  el.innerHTML = '<div class="alert ' + type + '">' + text + '</div>';
+  setTimeout(() => el.innerHTML = '', 5000);
+}
+</script>
+</body>
+</html>
